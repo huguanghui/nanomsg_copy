@@ -14,6 +14,7 @@ if(POLICY CMP0042)
 endif()
 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 set(NN_DESCRIPTION "High-Performance Scalability Protocols")
 set(ISSUE_REPORT_MSG
@@ -63,7 +64,7 @@ else()
   set(NN_PACKAGE_VERSION "Unknown")
 endif()
 
-option(NN_STATIC_LIB "Build static library instead of shared library." OFF)
+option(NN_STATIC_LIB "Build static library instead of shared library." ON)
 option(NN_ENABLE_DOC "Enable building documentation." ON)
 option(NN_ENABLE_COVERAGE "Enable coverage reporting." OFF)
 option(NN_ENABLE_GETADDRINFO_A
@@ -244,3 +245,8 @@ endif()
 add_definitions(-DNN_MAX_SOCKETS=${NN_MAX_SOCKETS})
 
 add_subdirectory(src)
+add_subdirectory(demo)
+
+install(TARGETS LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES src/nn.h DESTINATION include/nanomsg)

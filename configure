@@ -1,0 +1,12 @@
+SRCDIR=`dirname $0`
+CURDIR=`pwd`
+
+strip_arg()
+{
+    x=`echo "$1" | sed "s/[^=]*=//`
+    eval $2=\"$x\"
+}
+
+warn() {
+    echo "$*" 1>&2
+}
