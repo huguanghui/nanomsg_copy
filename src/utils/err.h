@@ -51,6 +51,17 @@
         }                                                                      \
     } while (0)
 
+#define errno_assert(x)                                                        \
+    do {                                                                       \
+        if (nn_slow(!(x))) {                                                   \
+            nn_backtrace_print();                                              \
+            fprintf(stderr, "%s [%d] (%s:%d)\n", nn_err_strerror(errno),       \
+                (int)errno, __FILE__, __LINE__);                               \
+            fflush(stderr);                                                    \
+            nn_err_abort();                                                    \
+        }                                                                      \
+    } while (0)
+
 #define errnum_assert(cond, err)                                               \
     do {                                                                       \
         if (nn_slow(!(cond))) {                                                \

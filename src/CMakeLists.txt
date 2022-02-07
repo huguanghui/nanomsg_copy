@@ -3,11 +3,48 @@ set(NN_SOURCES
     nn.c
     utils/alloc.h
     utils/alloc.c
+    utils/atomic.h
+    utils/atomic.c
+    utils/attr.h
+    utils/chunk.h
+    utils/chunk.c
+    utils/chunkref.h
+    utils/chunkref.c
+    utils/clock.h
+    utils/clock.c
+    utils/closefd.h
+    utils/closefd.c
+    utils/cont.h
     utils/err.h
     utils/err.c
     utils/fast.h
+    utils/fd.h
+    utils/hash.h
+    utils/hash.c
+    utils/list.h
+    utils/list.c
+    utils/msg.h
+    utils/msg.c
     utils/mutex.h
-    utils/mutex.c)
+    utils/mutex.c
+    utils/once.h
+    utils/once.c
+    utils/queue.h
+    utils/queue.c
+    utils/random.h
+    utils/random.c
+    utils/sem.h
+    utils/sem.c
+    utils/sleep.h
+    utils/sleep.c
+    utils/strcasecmp.h
+    utils/strcasecmp.c
+    utils/strcasestr.h
+    utils/strcasestr.c
+    utils/strncasecmp.h
+    utils/strncasecmp.c
+    utils/wire.h
+    utils/wire.c)
 
 foreach(f ${NN_SOURCES})
   if(IS_ABSOLUTE "${f}")
