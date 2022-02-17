@@ -19,5 +19,14 @@ int nn_efd_init(struct nn_efd *self);
 
 void nn_efd_term(struct nn_efd *self);
 
+nn_fd nn_efd_getfd(struct nn_efd *self);
+
+void nn_efd_stop(struct nn_efd *self);
+
+void nn_efd_signal(struct nn_efd *self);
+
+void nn_efd_unsignal(struct nn_efd *self);
+
+int nn_efd_wait(struct nn_efd *self, int timeout);
 
 #endif // !NN_CLOSEFD_INCLUDED

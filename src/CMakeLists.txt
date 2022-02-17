@@ -25,6 +25,8 @@ set(NN_SOURCES
     utils/list.c
     utils/msg.h
     utils/msg.c
+    utils/condvar.h
+    utils/condvar.c
     utils/mutex.h
     utils/mutex.c
     utils/once.h
@@ -43,8 +45,18 @@ set(NN_SOURCES
     utils/strcasestr.c
     utils/strncasecmp.h
     utils/strncasecmp.c
+    utils/thread.h
+    utils/thread.c
     utils/wire.h
     utils/wire.c)
+
+if(WIN32)
+  list(APPEND NN_SOURCES utils/thread_win.h utils/thread_win.inc utils/win.h)
+elseif(UNIX)
+  list(APPEND NN_SOURCES utils/thread_posix.h utils/thread_posix.inc)
+else()
+  message(FATAL_ERROR "Assertion failed; this path is unreachable.")
+endif()
 
 foreach(f ${NN_SOURCES})
   if(IS_ABSOLUTE "${f}")
