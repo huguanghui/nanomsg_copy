@@ -61,8 +61,8 @@ struct nn_sock {
         uint64_t bind_errors;
         uint64_t accept_errors;
 
-        uint64_t message_sent;
-        uint64_t message_received;
+        uint64_t messages_sent;
+        uint64_t messages_received;
         uint64_t bytes_sent;
         uint64_t bytes_received;
 

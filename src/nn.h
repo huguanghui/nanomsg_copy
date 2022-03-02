@@ -174,7 +174,7 @@ NN_EXPORT void nn_term(void);
 
 NN_EXPORT void *nn_allocmsg(size_t size, int type);
 NN_EXPORT void *nn_reallocmsg(void *msg, size_t size);
-NN_EXPORT void nn_freemsg(void *msg);
+NN_EXPORT int nn_freemsg(void *msg);
 
 struct nn_iovec {
   void *iov_base;
@@ -273,7 +273,7 @@ NN_EXPORT int nn_device(int s1, int s2);
 #define NN_STAT_ACCEPTED_CONNECTIONS 102
 #define NN_STAT_DROPPED_CONNECTIONS 103
 #define NN_STAT_BROKEN_CONNECTIONS 104
-#define NN_STAT_CONNET_ERRORS 105
+#define NN_STAT_CONNECT_ERRORS 105
 #define NN_STAT_BIND_ERRORS 106
 #define NN_STAT_ACCEPT_ERRORS 107
 
@@ -281,8 +281,8 @@ NN_EXPORT int nn_device(int s1, int s2);
 #define NN_STAT_INPROGRESS_CONNECTIONS 202
 #define NN_STAT_CURRENT_EP_ERRORS 203
 
-#define NN_STAT_MESSAGE_SENT 301
-#define NN_STAT_MESSAGE_RECEIVED 302
+#define NN_STAT_MESSAGES_SENT 301
+#define NN_STAT_MESSAGES_RECEIVED 302
 #define NN_STAT_BYTES_SENT 303
 #define NN_STAT_BYTES_RECEIVED 304
 

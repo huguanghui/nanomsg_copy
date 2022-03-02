@@ -32,9 +32,8 @@
     do {                                                                       \
         if (nn_slow((obj)->state != state_name)) {                             \
             nn_backtrace_print();                                              \
-            fprintf(stderr,                                                    \
-                "Assertion failed: %d == %s (%s:%d)\n"(obj)->state,            \
-                #state_name, __FILE__, __LINE__);                              \
+            fprintf(stderr, "Assertion failed: %d == %s (%s:%d)\n",            \
+                (obj)->state, #state_name, __FILE__, __LINE__);                \
             fflush(stderr);                                                    \
             nn_err_abort();                                                    \
         }                                                                      \

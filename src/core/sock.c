@@ -660,6 +660,291 @@ void nn_sock_rm(struct nn_sock *self, struct nn_pipe *pipe)
     nn_sock_stat_increment(self, NN_STAT_CURRENT_CONNECTIONS, -1);
 }
 
+static void nn_sock_onleae(struct nn_ctx *self)
+{
+    struct nn_sock *sock;
+    int events;
+
+    sock = nn_cont(self, struct nn_sock, ctx);
+
+    if (nn_slow(sock->state != NN_SOCK_STATE_ACTIVE)) {
+        return;
+    }
+
+    events = sock->sockbase->vfptr->events(sock->sockbase);
+    errnum_assert(events >= 0, -events);
+
+    if (!(sock->socktype->flags & NN_SOCKTYPE_FLAG_NORECV)) {
+        if (events & NN_SOCKBASE_EVENT_IN) {
+            if (!(sock->flags & NN_SOCK_FLAG_IN)) {
+                sock->flags |= NN_SOCK_FLAG_IN;
+                nn_efd_signal(&sock->rcvfd);
+            }
+        } else {
+            if (sock->flags & NN_SOCK_FLAG_IN) {
+                sock->flags &= ~NN_SOCK_FLAG_IN;
+                nn_efd_unsignal(&sock->rcvfd);
+            }
+        }
+    }
+
+    if (!(sock->socktype->flags & NN_SOCKTYPE_FLAG_NOSEND)) {
+        if (events & NN_SOCKBASE_EVENT_OUT) {
+            if (!(sock->flags & NN_SOCK_FLAG_OUT)) {
+                sock->flags |= NN_SOCK_FLAG_OUT;
+                nn_efd_signal(&sock->sndfd);
+            }
+        } else {
+            if (sock->flags & NN_SOCK_FLAG_OUT) {
+                sock->flags &= ~NN_SOCK_FLAG_OUT;
+                nn_efd_unsignal(&sock->sndfd);
+            }
+        }
+    }
+}
+
+static struct nn_optset *nn_sock_optset(struct nn_sock *self, int id)
+{
+    int index;
+    const struct nn_transport *tp;
+
+    index = (-id) - 1;
+
+    if (nn_slow(index < 0 || index >= NN_MAX_TRANSPORT)) {
+        return NULL;
+    }
+
+    if (nn_fast(self->optsets[index] != NULL)) {
+        return self->optsets[index];
+    }
+
+    tp = nn_global_transport(id);
+    if (nn_slow(!tp)) {
+        return NULL;
+    }
+    if (nn_slow(!tp->optset)) {
+        return NULL;
+    }
+    self->optsets[index] = tp->optset();
+
+    return self->optsets[index];
+}
+
+static void nn_sock_shutdown(
+    struct nn_fsm *self, int src, int type, void *srcptr)
+{
+    struct nn_sock *sock;
+    struct nn_list_item *it;
+    struct nn_ep *ep;
+
+    sock = nn_cont(self, struct nn_sock, fsm);
+
+    if (nn_slow(src == NN_FSM_ACTION && type == NN_FSM_STOP)) {
+        nn_assert(sock->state == NN_SOCK_STATE_ACTIVE);
+
+        if (!(sock->socktype->flags & NN_SOCKTYPE_FLAG_NORECV)) {
+            nn_efd_stop(&sock->rcvfd);
+        }
+        if (!(sock->socktype->flags & NN_SOCKTYPE_FLAG_NOSEND)) {
+            nn_efd_stop(&sock->sndfd);
+        }
+
+        it = nn_list_begin(&sock->eps);
+        while (it != nn_list_end(&sock->eps)) {
+            ep = nn_cont(it, struct nn_ep, item);
+            it = nn_list_next(&sock->eps, it);
+            nn_list_erase(&sock->eps, &ep->item);
+            nn_list_insert(&sock->sdeps, &ep->item, nn_list_end(&sock->sdeps));
+            nn_ep_stop(ep);
+        }
+        sock->state = NN_SOCK_STATE_STOPPING_EPS;
+        goto finish2;
+    }
+    if (nn_slow(sock->state == NN_SOCK_STATE_STOPPING_EPS)) {
+        if (!(src == NN_SOCK_SRC_EP && type == NN_EP_STOPPED)) {
+            return;
+        }
+        ep = (struct nn_ep *)srcptr;
+        nn_list_erase(&sock->sdeps, &ep->item);
+        nn_ep_term(ep);
+        nn_free(ep);
+    finish2:
+        if (!nn_list_empty(&sock->sdeps)) {
+            return;
+        }
+        nn_assert(nn_list_empty(&sock->eps));
+        sock->state = NN_SOCK_STATE_STOPPING;
+        if (!sock->sockbase->vfptr->stop) {
+            goto finish1;
+        }
+        sock->sockbase->vfptr->stop(sock->sockbase);
+        return;
+    }
+    if (nn_slow(sock->state == NN_SOCK_STATE_STOPPING)) {
+        nn_assert(src == NN_FSM_ACTION && type == NN_SOCK_ACTION_STOPPED);
+    finish1:
+        sock->sockbase->vfptr->destroy(sock->sockbase);
+        sock->state = NN_SOCK_STATE_FINI;
+
+        nn_sem_post(&sock->termsem);
+
+        return;
+    }
+
+    nn_fsm_bad_state(sock->state, src, type);
+}
+
+static void nn_sock_handler(
+    struct nn_fsm *self, int src, int type, void *srcptr)
+{
+    struct nn_sock *sock;
+    struct nn_ep *ep;
+
+    sock = nn_cont(self, struct nn_sock, fsm);
+
+    switch (sock->state) {
+    case NN_SOCK_STATE_INIT:
+        switch (src) {
+        case NN_FSM_ACTION:
+            switch (type) {
+            case NN_FSM_START:
+                sock->state = NN_SOCK_STATE_ACTIVE;
+                return;
+            default:
+                nn_fsm_bad_action(sock->state, src, type);
+            }
+        default:
+            nn_fsm_bad_source(sock->state, src, type);
+        }
+    case NN_SOCK_STATE_ACTIVE:
+        switch (src) {
+        case NN_FSM_ACTION:
+            switch (type) {
+            default:
+                nn_fsm_bad_action(sock->state, src, type);
+            }
+        case NN_SOCK_SRC_EP:
+            switch (type) {
+            case NN_EP_STOPPED:
+                ep = (struct nn_ep *)srcptr;
+                nn_list_erase(&sock->eps, &ep->item);
+                nn_ep_term(ep);
+                nn_free(ep);
+                return;
+            default:
+                nn_fsm_bad_action(sock->state, src, type);
+            }
+        default:
+            switch (type) {
+            case NN_PIPE_IN:
+                sock->sockbase->vfptr->in(
+                    sock->sockbase, (struct nn_pipe *)srcptr);
+                return;
+            case NN_PIPE_OUT:
+                sock->sockbase->vfptr->out(
+                    sock->sockbase, (struct nn_pipe *)srcptr);
+                return;
+            default:
+                nn_fsm_bad_action(sock->state, src, type);
+            }
+        }
+    default:
+        nn_fsm_bad_state(sock->state, src, type);
+    }
+}
+
+void nn_sock_report_error(struct nn_sock *self, struct nn_ep *ep, int errnum)
+{
+    if (!nn_global_print_errors()) {
+        return;
+    }
+
+    if (errnum == 0) {
+        return;
+    }
+
+    if (ep) {
+        fprintf(stderr, "nanomsg: socket.%s[%s]: Error: %s\n",
+            self->socket_name, nn_ep_getaddr(ep), nn_strerror(errnum));
+    } else {
+        fprintf(stderr, "nanomsg: socket.%s: Error: %s\n", self->socket_name,
+            nn_strerror(errnum));
+    }
+}
+
+void nn_sock_stat_increment(struct nn_sock *self, int name, int64_t increment)
+{
+    switch (name) {
+    case NN_STAT_ESTABLISHED_CONNECTIONS:
+        nn_assert(increment > 0);
+        self->statistics.established_connections += increment;
+        break;
+    case NN_STAT_ACCEPTED_CONNECTIONS:
+        nn_assert(increment > 0);
+        self->statistics.accepted_connections += increment;
+        break;
+    case NN_STAT_DROPPED_CONNECTIONS:
+        nn_assert(increment > 0);
+        self->statistics.dropped_connections += increment;
+        break;
+    case NN_STAT_BROKEN_CONNECTIONS:
+        nn_assert(increment > 0);
+        self->statistics.broken_connections += increment;
+        break;
+    case NN_STAT_CONNECT_ERRORS:
+        nn_assert(increment > 0);
+        self->statistics.connect_errors += increment;
+        break;
+    case NN_STAT_BIND_ERRORS:
+        nn_assert(increment > 0);
+        self->statistics.bind_errors += increment;
+        break;
+    case NN_STAT_ACCEPT_ERRORS:
+        nn_assert(increment > 0);
+        self->statistics.accept_errors += increment;
+        break;
+    case NN_STAT_MESSAGES_SENT:
+        nn_assert(increment > 0);
+        self->statistics.messages_sent += increment;
+        break;
+    case NN_STAT_MESSAGES_RECEIVED:
+        nn_assert(increment > 0);
+        self->statistics.messages_received += increment;
+        break;
+    case NN_STAT_BYTES_SENT:
+        nn_assert(increment > 0);
+        self->statistics.bytes_sent += increment;
+        break;
+    case NN_STAT_BYTES_RECEIVED:
+        nn_assert(increment > 0);
+        self->statistics.bytes_received += increment;
+        break;
+
+    case NN_STAT_CURRENT_CONNECTIONS:
+        nn_assert(increment > 0
+            || self->statistics.current_connections >= -increment);
+        nn_assert(increment < INT_MAX && increment > -INT_MAX);
+        self->statistics.current_connections += (int)increment;
+        break;
+    case NN_STAT_INPROGRESS_CONNECTIONS:
+        nn_assert(increment > 0
+            || self->statistics.inprogress_connections >= -increment);
+        nn_assert(increment < INT_MAX && increment > -INT_MAX);
+        self->statistics.inprogress_connections += (int)increment;
+        break;
+    case NN_STAT_CURRENT_SND_PRIORITY:
+        nn_assert((increment > 0 && increment <= 16) || increment == -1);
+        self->statistics.current_snd_priority = (int)increment;
+        break;
+    case NN_STAT_CURRENT_EP_ERRORS:
+        nn_assert(
+            increment > 0 || self->statistics.current_ep_errors >= -increment);
+        nn_assert(increment < INT_MAX && increment > -INT_MAX);
+        self->statistics.current_ep_errors += (int)increment;
+        break;
+    }
+}
+
 int nn_sock_hold(struct nn_sock *self)
 {
     switch (self->state) {
